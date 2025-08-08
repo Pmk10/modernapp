@@ -1,0 +1,325 @@
+{% extends "base.html" %}
+
+{% block title %}Home - ModernBlog{% endblock %}
+
+{% block content %}
+<div class="container my-5">
+    <!-- Hero Section with Featured Post -->
+    {% if featured_post %}
+    <div class="hero-section mb-5">
+        <div class="row align-items-center">
+            <div class="col-lg-6">
+                <div class="badge bg-warning text-dark mb-3">Featured Post</div>
+                <h1 class="display-4 fw-bold">{{ featured_post.title }}</h1>
+                <p class="lead">{{ featured_post.excerpt }}</p>
+                <div class="d-flex align-items-center mb-3">
+                    <small class="text-muted me-3">
+                        <i class="bi bi-person"></i> {{ featured_post.author.username }}
+                    </small>
+                    <small class="text-muted me-3">
+                        <i class="bi bi-calendar"></i> {{ featured_post.date_created.strftime('%B %d, %Y') }}
+                    </small>
+                    <small class="text-muted">
+                        <i class="bi bi-clock"></i> {{ featured_post.read_time }}
+                    </small>
+                </div>
+                <a href="{{ url_for('post_detail', post_id=featured_post.id) }}" class="btn btn-primary btn-lg">
+                    Read More
+                </a>
+            </div>
+            <div class="col-lg-6">
+                <div class="text-center">
+                    <img src="{{ url_for('static', filename='uploads/frontend.jpeg') }}" alt="Featured Post" class="img-fluid rounded">
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Filter Bar -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title mb-3">Filter Posts</h5>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <label class="form-label">Category</label>
+                            <select class="form-select" id="category-filter">
+                                <option value="">All Categories</option>
+                                {% for category in categories %}
+                                    <option value="{{ category.id }}">{{ category.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Tags</label>
+                            <div class="d-flex flex-wrap gap-2" id="tag-filters">
+                                {% for tag in tags %}
+                                    <button type="button" class="btn btn-outline-secondary btn-sm tag-filter" 
+                                            data-tag="{{ tag.name }}">
+                                        {{ tag.name }}
+                                    </button>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Blog Posts Grid -->
+    <div class="row" id="posts-container">
+        {% for post in recent_posts %}
+        <div class="col-lg-4 col-md-6 mb-4 post-card" 
+             data-category="{{ post.category.id }}" 
+             data-post-id="{{ post.id }}"
+             data-tags="{% for tag in post.tags %}{{ tag.name }}{% if not loop.last %},{% endif %}{% endfor %}">
+            <div class="card h-100 blog-card">
+                <!-- FIXED: Each post gets a fixed image based on its ID -->
+                {% set image_list = ['frontend.jpeg', 'bootstrap.jpeg', 'css-grid.jpeg', 'es6.jpeg', 'accessibility.jpeg'] %}
+                <img src="{{ url_for('static', filename='uploads/' + image_list[post.id % 5]) }}" 
+                     class="card-img-top" alt="{{ post.title }}" data-post-image="{{ image_list[post.id % 5] }}">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <span class="badge bg-primary">{{ post.category.name }}</span>
+                        {% if post.featured %}
+                            <span class="badge bg-warning text-dark">Featured</span>
+                        {% endif %}
+                    </div>
+                    <h5 class="card-title">{{ post.title }}</h5>
+                    <p class="card-text">{{ post.excerpt }}</p>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <small class="text-muted">
+                            <i class="bi bi-person"></i> {{ post.author.username }}
+                        </small>
+                        <small class="text-muted">{{ post.read_time }}</small>
+                    </div>
+                </div>
+                <div class="card-footer bg-transparent">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="tag-list">
+                            {% for tag in post.tags[:3] %}
+                                <span class="badge bg-light text-dark me-1">{{ tag.name }}</span>
+                            {% endfor %}
+                        </div>
+                        <a href="{{ url_for('post_detail', post_id=post.id) }}" class="btn btn-outline-primary btn-sm">
+                            Read More
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="col-12">
+            <div class="text-center py-5">
+                <h3>No posts found</h3>
+                <p>Be the first to create a post!</p>
+                {% if current_user.is_authenticated %}
+                    <a href="{{ url_for('create_post') }}" class="btn btn-primary">Create Post</a>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Load More Button -->
+    <div class="text-center mt-4">
+        <button class="btn btn-outline-primary" id="load-more-btn" data-page="2">
+            <span class="spinner-border spinner-border-sm d-none" role="status"></span>
+            Load More Posts
+        </button>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// AJAX Implementation for Dynamic Content Loading
+$(document).ready(function() {
+    
+    // FIXED: Function to get consistent image for each post ID
+    function getPostImage(postId) {
+        const imageList = ['frontend.jpeg', 'bootstrap.jpeg', 'css-grid.jpeg', 'es6.jpeg', 'accessibility.jpeg'];
+        return imageList[postId % 5];
+    }
+    
+    // Search functionality with AJAX
+    $('#search-form').on('submit', function(e) {
+        e.preventDefault();
+        const searchTerm = $('#search-input').val().trim();
+        
+        if (searchTerm.length < 3) {
+            alert('Please enter at least 3 characters to search.');
+            return;
+        }
+        
+        // AJAX POST request to Flask backend
+        $.ajax({
+            url: '{{ url_for("api_search") }}',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({
+                search: searchTerm
+            }),
+            success: function(response) {
+                displaySearchResults(response.results);
+                $('#searchModal').modal('show');
+            },
+            error: function(xhr, status, error) {
+                console.error('Search failed:', error);
+                alert('Search failed. Please try again.');
+            }
+        });
+    });
+    
+    // Category filter with AJAX
+    $('#category-filter').on('change', function() {
+        const categoryId = $(this).val();
+        loadFilteredPosts({ category_id: categoryId });
+    });
+    
+    // Tag filter with AJAX
+    $('.tag-filter').on('click', function() {
+        $(this).toggleClass('active btn-primary').toggleClass('btn-outline-secondary');
+        const activeTags = $('.tag-filter.active').map(function() {
+            return $(this).data('tag');
+        }).get();
+        
+        loadFilteredPosts({ tag: activeTags.join(',') });
+    });
+    
+    // Load more posts with AJAX pagination
+    $('#load-more-btn').on('click', function() {
+        const btn = $(this);
+        const page = btn.data('page');
+        const spinner = btn.find('.spinner-border');
+        
+        btn.prop('disabled', true);
+        spinner.removeClass('d-none');
+        
+        $.ajax({
+            url: '{{ url_for("api_get_posts") }}',
+            method: 'GET',
+            data: { page: page, per_page: 6 },
+            success: function(response) {
+                if (response.posts.length > 0) {
+                    appendPosts(response.posts);
+                    btn.data('page', page + 1);
+                    
+                    if (!response.has_next) {
+                        btn.hide();
+                    }
+                } else {
+                    btn.hide();
+                }
+            },
+            error: function(xhr, status, error) {
+                console.error('Load more failed:', error);
+                alert('Failed to load more posts.');
+            },
+            complete: function() {
+                btn.prop('disabled', false);
+                spinner.addClass('d-none');
+            }
+        });
+    });
+    
+    // Helper function to load filtered posts
+    function loadFilteredPosts(filters) {
+        $.ajax({
+            url: '{{ url_for("api_get_posts") }}',
+            method: 'GET',
+            data: filters,
+            success: function(response) {
+                $('#posts-container').empty();
+                if (response.posts.length > 0) {
+                    appendPosts(response.posts);
+                    $('#load-more-btn').toggle(response.has_next).data('page', 2);
+                } else {
+                    $('#posts-container').html(`
+                        <div class="col-12">
+                            <div class="text-center py-5">
+                                <h3>No posts found</h3>
+                                <p>Try adjusting your filters.</p>
+                            </div>
+                        </div>
+                    `);
+                    $('#load-more-btn').hide();
+                }
+            }
+        });
+    }
+    
+    // Helper function to append posts
+    function appendPosts(posts) {
+        posts.forEach(function(post) {
+            const postHtml = createPostCard(post);
+            $('#posts-container').append(postHtml);
+        });
+    }
+    
+    // Helper function to create post card HTML - FIXED with consistent images
+    function createPostCard(post) {
+        const tagsHtml = post.tags.slice(0, 3).map(tag => 
+            `<span class="badge bg-light text-dark me-1">${tag}</span>`
+        ).join('');
+        
+        const featuredBadge = post.featured ? 
+            '<span class="badge bg-warning text-dark">Featured</span>' : '';
+        
+        // FIXED: Each post gets the same image based on its ID
+        const imageFile = getPostImage(post.id);
+        
+        return `
+            <div class="col-lg-4 col-md-6 mb-4 post-card" data-post-id="${post.id}">
+                <div class="card h-100 blog-card">
+                    <img src="/static/uploads/${imageFile}" 
+                         class="card-img-top" alt="${post.title}" data-post-image="${imageFile}">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <span class="badge bg-primary">${post.category}</span>
+                            ${featuredBadge}
+                        </div>
+                        <h5 class="card-title">${post.title}</h5>
+                        <p class="card-text">${post.excerpt}</p>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <small class="text-muted">
+                                <i class="bi bi-person"></i> ${post.author}
+                            </small>
+                            <small class="text-muted">${post.read_time}</small>
+                        </div>
+                    </div>
+                    <div class="card-footer bg-transparent">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div class="tag-list">${tagsHtml}</div>
+                            <a href="${post.url}" class="btn btn-outline-primary btn-sm">
+                                Read More
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+    
+    // Helper function to display search results
+    function displaySearchResults(results) {
+        const resultsHtml = results.length > 0 ? 
+            results.map(result => `
+                <div class="search-result-item mb-3 p-3 border rounded">
+                    <h6><a href="${result.url}" class="text-decoration-none">${result.title}</a></h6>
+                    <p class="text-muted mb-1">${result.excerpt}</p>
+                    <small class="text-secondary">
+                        Category: ${result.category} | Author: ${result.author} | ${result.date}
+                    </small>
+                </div>
+            `).join('') :
+            '<p class="text-center">No results found for your search.</p>';
+            
+        $('#search-results').html(resultsHtml);
+    }
+});
+</script>
+{% endblock %}
